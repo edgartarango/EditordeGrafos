@@ -10,9 +10,10 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
+
 namespace EditordeGrafos
 {
-    public partial class TablasHash: Form
+    public partial class TablasHash : Form
     {
         private TablaDirecciones tablaHash;
         public TablasHash()
@@ -146,61 +147,93 @@ namespace EditordeGrafos
 
         private void abrirArchivodatToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            int seek = 0;
             OpenFileDialog openFile = new OpenFileDialog();
-            openFile.Filter = "Documento binario (*.dat)|*.dat|All files (*.*)|*.*";
+            openFile.Filter = "Archivo binario (*.bin)|*.bin|Todos los archivos (*.*)|*.*";
             openFile.InitialDirectory = Application.StartupPath + "\\Hash";
             if (tablaHash != null)
             {
                 MessageBox.Show("¡Ya hay una tabla creada, dar click en limpiar!");
+                return;
             }
-            else
+
+            if (openFile.ShowDialog() == DialogResult.OK)
             {
-                if (openFile.ShowDialog() == DialogResult.OK)
+                Enabled = false;
+
+                try
                 {
-                    Enabled = false;
-
-                    try
+                    using (BinaryReader reader = new BinaryReader(File.Open(openFile.FileName, FileMode.Open)))
                     {
-                        using (BinaryReader reader = new BinaryReader(File.Open(openFile.FileName, FileMode.Open)))
+                        // Leer cabecera
+                        int numeroDeZocalos = reader.ReadInt32();
+                        int capacidadCubetas = reader.ReadInt32();
+                        int tamRegistro = reader.ReadInt32();
+                        int apuntadorVacias = reader.ReadInt32();
+                        int eof = reader.ReadInt32();
+                        int eofini = reader.ReadInt32();
+
+                        // Inicializar tabla con los valores correctos
+                        tablaHash = new TablaDirecciones(numeroDeZocalos, capacidadCubetas, eof, tamRegistro);
+
+                        // Leer direcciones de zócalos
+                        for (int i = 0; i < numeroDeZocalos; i++)
                         {
-                            int numeroDeZocalos = reader.ReadInt32();
-                            int capacidadCubetas = reader.ReadInt32();
-                            int tamRegistro = reader.ReadInt32();
-                            int apuntadorVacias = reader.ReadInt32();
-                            int eof = reader.ReadInt32();
-                            int eofini = reader.ReadInt32();
-                            int[] direcc = new int[numeroDeZocalos];
-                            for(int i=0; i<numeroDeZocalos; i++)
+                            int direccion = reader.ReadInt32();
+                            if (direccion != 0)
                             {
-                                direcc[i] = reader.ReadInt32();
-                            }
-
-                            tablaHash = new TablaDirecciones(numeroDeZocalos, capacidadCubetas, tamRegistro, apuntadorVacias, eofini);
-
-                            seek=eofini + 1;
-                           
-                            reader.BaseStream.Seek(seek, SeekOrigin.Begin);
-
-                            while (reader.BaseStream.Position < reader.BaseStream.Length)
-                            {
-                                int direccionCubeta = reader.ReadInt32();
-                                int reguti = reader.ReadInt32();
-                                int claveRegistro=reader.ReadInt32();
-                                tablaHash.Inserta(claveRegistro);
+                                tablaHash.SetZocalo(i, direccion);
                             }
                         }
+
+                        // Ahora leemos las cubetas y sus registros
+                        long posicionActual = reader.BaseStream.Position;
+
+                        // Diccionario para evitar duplicados
+                        Dictionary<int, bool> clavesInsertadas = new Dictionary<int, bool>();
+
+                        // Leemos hasta el final del archivo
+                        while (posicionActual < reader.BaseStream.Length)
+                        {
+                            try
+                            {
+                                int direccionCubeta = reader.ReadInt32();
+                                int registrosUtilizados = reader.ReadInt32();
+
+                                // Leer cada registro de la cubeta actual
+                                for (int i = 0; i < registrosUtilizados; i++)
+                                {
+                                    int claveRegistro = reader.ReadInt32();
+
+                                    // Si la clave no existe, la insertamos
+                                    if (!clavesInsertadas.ContainsKey(claveRegistro))
+                                    {
+                                        tablaHash.Inserta(claveRegistro);
+                                        clavesInsertadas[claveRegistro] = true;
+                                    }
+                                }
+
+                                // Actualizar posición para la siguiente iteración
+                                posicionActual = reader.BaseStream.Position;
+                            }
+                            catch (EndOfStreamException)
+                            {
+                                // Si llegamos al final del archivo, salimos del bucle
+                                break;
+                            }
+                        }
+
+                        // Actualizar la interfaz gráfica
                         ActualizaGraficos();
-                        int errores = tablaHash.ValidaDirecciones();
                     }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show("Error al leer el archivo binario: " + ex.Message);
-                    }
-                    finally
-                    {
-                        Enabled = true;
-                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error al leer el archivo binario: " + ex.Message + "\n" + ex.StackTrace);
+                    tablaHash = null;
+                }
+                finally
+                {
+                    Enabled = true;
                 }
             }
         }
@@ -335,50 +368,119 @@ namespace EditordeGrafos
 
         private void GuardarDatosEnArchivoBinario(string archivoBinario)
         {
-            int seek = 0;
-            using (BinaryWriter writer = new BinaryWriter(File.Open(archivoBinario, FileMode.Create)))
+            try
             {
-                writer.Write(tablaHash.GetNumeroDeZocalos());
-                writer.Write(tablaHash.GetCapacidadCubetas());
-                writer.Write(tablaHash.TAM_REGISTRO);
-                writer.Write(tablaHash.GetApuntadorVacias());
-                writer.Write(tablaHash.GetEOF());
-                writer.Write(tablaHash.GetEOFInicial());
+                using (BinaryWriter writer = new BinaryWriter(File.Open(archivoBinario, FileMode.Create)))
+                {
+                    // Escribir cabecera
+                    writer.Write(tablaHash.GetNumeroDeZocalos());
+                    writer.Write(tablaHash.GetCapacidadCubetas());
+                    writer.Write(tablaHash.TAM_REGISTRO);
+                    writer.Write(tablaHash.GetApuntadorVacias());
+                    writer.Write(tablaHash.GetEOF());
+                    writer.Write(tablaHash.GetEOFInicial());
 
-                foreach (Cubeta cube in tablaHash.GetDireccionesDeCubetas())
-                {
-                    writer.Write(cube.GetDireccion());
-                }
-                seek=tablaHash.GetEOFInicial() + 1;
-                writer.BaseStream.Seek(seek, SeekOrigin.Begin);
-                foreach (Cubeta cubeta in tablaHash.GetDireccionesDeCubetas())
-                {
-                    writer.Write(cubeta.GetDireccion());
-                    writer.Write(cubeta.GetRegistrosUtilizados());
-                    foreach(Registro reg in cubeta.GetRegistros())
+                    // Escribir direcciones de zócalos
+                    for (int i = 0; i < tablaHash.GetNumeroDeZocalos(); i++)
                     {
-                        writer.Write(reg.GetClave());
+                        Cubeta cubeta = tablaHash.direccionesDeCuebetas[i];
+                        writer.Write(cubeta != null ? cubeta.GetDireccion() : 0);
+                    }
+
+                    // Guardar todas las cubetas existentes
+                    // Primero recopilamos todas las cubetas para asegurar que guardamos todas
+                    List<Cubeta> todasLasCubetas = new List<Cubeta>();
+
+                    // Recopilamos todas las cubetas principales y sus cubetas enlazadas
+                    foreach (Cubeta cubeta in tablaHash.GetDireccionesDeCubetas())
+                    {
+                        if (cubeta != null)
+                        {
+                            todasLasCubetas.Add(cubeta);
+
+                            // También añadimos todas las cubetas enlazadas
+                            Cubeta siguiente = cubeta.GetSiguiente();
+                            while (siguiente != null)
+                            {
+                                todasLasCubetas.Add(siguiente);
+                                siguiente = siguiente.GetSiguiente();
+                            }
+                        }
+                    }
+
+                    // Ordenamos las cubetas por dirección para mantener coherencia
+                    todasLasCubetas = todasLasCubetas.OrderBy(c => c.GetDireccion()).ToList();
+
+                    // Escribimos cada cubeta con sus registros
+                    foreach (Cubeta cubeta in todasLasCubetas)
+                    {
+                        writer.Write(cubeta.GetDireccion());
+                        writer.Write(cubeta.GetRegistrosUtilizados());
+
+                        // Escribimos cada registro de la cubeta
+                        foreach (Registro reg in cubeta.GetRegistros())
+                        {
+                            if (reg != null)
+                                writer.Write(reg.GetClave());
+                        }
                     }
                 }
+                MessageBox.Show("Archivo guardado correctamente", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error al guardar el archivo binario: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private void button2_Click(object sender, EventArgs e)
+        {
+            if (tablaHash == null)
+            {
+                MessageBox.Show("Cree una tabla o abra un archivo de tablas de Hash");
+                return;
+            }
+            if (numericUpDown1.Value < 0)
+            {
+                MessageBox.Show("¡Ingrese valores positivos!");
+                return;
+            }
+            try
+            {
+                if (tablaHash.Elimina((int)numericUpDown1.Value))
+                {
+                    ActualizaGraficos();
+                    MessageBox.Show("La clave (" + numericUpDown1.Value + ") ha sido eliminada correctamente.");
+                }
+                else
+                {
+                    MessageBox.Show("La clave (" + numericUpDown1.Value + ") no existe en la tabla.");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("¡Ocurrió un error al eliminar: " + ex.Message + "!");
             }
         }
 
         private void toolStripMenuItem1_Click(object sender, EventArgs e)
         {
+            if (tablaHash == null)
+            {
+                MessageBox.Show("¡Aún no se ha creado o cargado alguna tabla!");
+                return;
+            }
+
             SaveFileDialog sav = new SaveFileDialog
             {
-                Filter = "Documento dat (*.dat)|*.dat|All files (*.*)|*.*",
+                Filter = "Archivo binario (*.bin)|*.bin|Todos los archivos (*.*)|*.*",
+                DefaultExt = "bin",
                 InitialDirectory = Application.StartupPath + "\\Hash"
             };
-            String nombr;
+
             if (sav.ShowDialog() == DialogResult.OK)
             {
-                nombr = sav.FileName;
-                GuardarDatosEnArchivoBinario(nombr);
-
+                GuardarDatosEnArchivoBinario(sav.FileName);
             }
-            else
-                MessageBox.Show("¡Aún no se ha creado o cargado alguna tabla!");
         }
 
         private void toolStripMenuItem2_Click(object sender, EventArgs e)

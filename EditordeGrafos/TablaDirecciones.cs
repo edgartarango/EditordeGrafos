@@ -230,6 +230,40 @@ namespace EditordeGrafos
             }
             return false;
         }
+        public bool Elimina(int clave)
+        {
+            if (!ExisteClave(clave))
+                return false;
+
+            int posicion = HashMod(clave);
+            Cubeta zocalo = direccionesDeCuebetas[posicion];
+
+            if (zocalo != null)
+            {
+                // Check if the key is in the head cubeta
+                Registro registroAEliminar = zocalo.GetRegistros().Find(r => r.GetClave() == clave);
+                if (registroAEliminar != null)
+                {
+                    return zocalo.EliminaRegistro(registroAEliminar);
+                }
+                else
+                {
+                    // Check the chain of cubetas
+                    Cubeta cubetaActual = zocalo;
+                    while (cubetaActual.GetSiguiente() != null)
+                    {
+                        cubetaActual = cubetaActual.GetSiguiente();
+                        registroAEliminar = cubetaActual.GetRegistros().Find(r => r.GetClave() == clave);
+                        if (registroAEliminar != null)
+                        {
+                            return cubetaActual.EliminaRegistro(registroAEliminar);
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
 
         public int HashMod(int clave)
         {

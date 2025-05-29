@@ -96,6 +96,18 @@ namespace EditordeGrafos
                 return BuscaCubetaInsercion(registro, padre.siguienteCubeta);
             return padre;
         }
+        public bool EliminaRegistro(Registro registro)
+        {
+            if (registros.Contains(registro))
+            {
+                registros.Remove(registro);
+                registrosUtilizados--;
+                cubetaGrafica.ActualizaRegistros(registros.Select(r => r.GetClave()).ToList());
+                cubetaGrafica.ActualizaCubeta();
+                return true;
+            }
+            return false;
+        }
 
         public bool InsertaConColision(Registro registro, int EOF)
         {
